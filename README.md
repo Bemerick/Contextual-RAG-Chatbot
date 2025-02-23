@@ -1,4 +1,4 @@
-![Image](https://github.com/user-attachments/assets/da10a04e-cb56-4807-a271-ee2ac6551337)
+![Image](https://github.com/user-attachments/assets/8ac6da1c-dd17-42e7-bfb7-a7e5ce62955e)
 
 # Contextual-RAG-Chatbot:
 
