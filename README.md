@@ -15,5 +15,5 @@ This application is a Streamlit-based chatbot that analyzes multiple PDF documen
 
 1. **Clone the Repository**
    ```bash
-   git clone <repository-url>
-   cd <repository-directory>
+   git clone https://github.com/Anupam0202/Contextual-RAG-Chatbot
+   cd Contextual-RAG-Chatbot
