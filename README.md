@@ -1,12 +1,17 @@
 # Contextual-RAG-Chatbot:
 
-## Advanced Document Q&A Assistant
+## Overview
 
-This is a Streamlit-based application designed to allow users to upload documents in PDF, TXT, or DOCX formats, process them using the Gemini API, and ask questions based on their content. Leveraging Retrieval-Augmented Generation (RAG), the application provides accurate, context-aware answers derived exclusively from the uploaded documents.
+This application is a Streamlit-based chatbot that analyzes multiple PDF documents using Retrieval-Augmented Generation (RAG) with Google's Gemini model. It allows users to upload PDFs, process them, and ask questions about their content, providing context-aware responses.
 
-### Installation
+## Features
 
-Follow these steps to set up the application on your local machine:
+- Upload and process multiple PDF documents (up to 100MB each).
+- Ask questions with context from uploaded documents.
+- View conversation history and document sources.
+- Customize settings like temperature, chunk size, and context window.
+
+## Installation
 
 1. **Clone the Repository**
    ```bash
