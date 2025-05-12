@@ -6,15 +6,21 @@ import PyPDF2
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import List, Dict, Any, Tuple, Optional
-import re
-import hashlib
-from datetime import datetime
 import io
-import traceback
+import json
+import logging
+from text_cleaner import clean_text
+from datetime import datetime
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-import logging
+import hashlib
+import re
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -90,19 +96,19 @@ def initialize_session_state():
     Initialize session state with enhanced error handling and validation
     """
     try:
-        # Initialize basic session variables
+        # Initialize all required session state variables if they don't exist
         if 'document_store' not in st.session_state:
-            st.session_state.document_store = {}
+            st.session_state['document_store'] = {}
 
         if 'conversation_history' not in st.session_state:
-            st.session_state.conversation_history = []
+            st.session_state['conversation_history'] = []
 
         if 'messages' not in st.session_state:
-            st.session_state.messages = []
+            st.session_state['messages'] = []
 
         # Initialize processing status tracking
         if 'processing_status' not in st.session_state:
-            st.session_state.processing_status = {
+            st.session_state['processing_status'] = {
                 'is_processing': False,
                 'current_file': None,
                 'progress': 0,
@@ -118,17 +124,18 @@ def initialize_session_state():
             'top_k_results': 5
         }
 
+        # Initialize all settings using dict access
         for key, value in default_settings.items():
             if key not in st.session_state:
                 st.session_state[key] = value
 
-        # Validate current settings
+        # Validate current settings using get() for safe access
         is_valid, error_msg = validate_settings(
-            st.session_state.model_temperature,
-            st.session_state.context_window,
-            st.session_state.chunk_size,
-            st.session_state.chunk_overlap,
-            st.session_state.top_k_results
+            st.session_state.get('model_temperature', 0.7),
+            st.session_state.get('context_window', 3),
+            st.session_state.get('chunk_size', 500),
+            st.session_state.get('chunk_overlap', 100),
+            st.session_state.get('top_k_results', 5)
         )
 
         if not is_valid:
@@ -255,30 +262,22 @@ class EnhancedPDFProcessor:
 
     def _clean_text(self, text: str) -> str:
         """Enhanced text cleaning with better formatting preservation"""
-        # Remove multiple spaces while preserving paragraph breaks
-        text = re.sub(r'\s{2,}', ' ', text)
-
-        # Normalize line breaks
-        text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
-        text = re.sub(r'\n{3,}', '\n\n', text)
-
-        # Remove special characters while preserving essential punctuation
-        text = re.sub(r'[^\w\s.,!?;:()$$$$"\'%-]', '', text)
-
-        # Normalize quotes and dashes
-        text = text.replace('"', '"').replace('"', '"').replace('—', '-')
-
-        return text.strip()
+        return clean_text(text)
 
 class EnhancedRAGChatbot:
-    def __init__(self, api_key: str):
+    def __init__(self):
+        # Get API key from environment variable
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY not found in environment variables. Please check your .env file.")
+            
         genai.configure(api_key=api_key)
-        self.text_model = genai.GenerativeModel('gemini-pro')
+        self.text_model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
         self.pdf_processor = EnhancedPDFProcessor()
 
-        # Apply validated temperature setting
+        # Apply validated temperature setting with safe access
         self.generation_config = {
-            "temperature": st.session_state.model_temperature,
+            "temperature": st.session_state.get('model_temperature', 0.7),
             "top_p": 0.9,
             "top_k": 40,
             "max_output_tokens": 2048,  # Reasonable limit for responses
@@ -409,8 +408,10 @@ class EnhancedRAGChatbot:
             processed_query = self.pdf_processor._clean_text(query)
 
             # Include conversation history in context
-            if st.session_state.conversation_history:
-                recent_messages = st.session_state.conversation_history[-st.session_state.context_window:]
+            conversation_history = st.session_state.get('conversation_history', [])
+            context_window = st.session_state.get('context_window', 3)
+            if conversation_history:
+                recent_messages = conversation_history[-context_window:]
                 context_text = " ".join([msg['content'] for msg in recent_messages])
                 processed_query = f"{context_text} {processed_query}"
 
@@ -428,7 +429,8 @@ class EnhancedRAGChatbot:
             all_chunks = []
             chunk_sources = []
 
-            for doc_id, doc_data in st.session_state.document_store.items():
+            document_store = st.session_state.get('document_store', {})
+            for doc_id, doc_data in document_store.items():
                 all_embeddings.extend(doc_data['embeddings'])
                 all_chunks.extend(doc_data['chunks'])
                 chunk_sources.extend([doc_data['filename']] * len(doc_data['chunks']))
@@ -467,8 +469,10 @@ class EnhancedRAGChatbot:
         try:
             # Prepare conversation context
             recent_messages = []
-            if st.session_state.conversation_history:
-                history_window = st.session_state.conversation_history[-st.session_state.context_window:]
+            conversation_history = st.session_state.get('conversation_history', [])
+            context_window = st.session_state.get('context_window', 3)
+            if conversation_history:
+                history_window = conversation_history[-context_window:]
                 recent_messages = [
                     f"{msg['role']}: {msg['content']}"
                     for msg in history_window
@@ -543,95 +547,92 @@ def main():
         )
 
         # Main title and description
-        st.title("📚 Document Analysis Assistant")
-        st.markdown("""
-        An intelligent chatbot for analyzing multiple PDF documents with enhanced processing capabilities
-        and advanced context awareness.
-        """)
+        col1, col2 = st.columns([1, 3])
+        with col2:
+            st.title("📚 Document Analysis Assistant")
+            st.markdown("""
+            An intelligent chatbot for analyzing multiple PDF documents with enhanced processing capabilities
+            and advanced context awareness.
+            """)
 
         # Sidebar Configuration
         with st.sidebar:
+            # Display logo
+            st.image("assets/Longevity-Logo-Horizontal-Color.png", width=250)
+            
             st.header("⚙️ Configuration")
+            
+            # Context window setting
+            context_value = st.slider(
+                "Context Window",
+                min_value=1,
+                max_value=10,
+                value=st.session_state.get('context_window', 3),
+                step=1,
+                help="Number of previous messages to consider"
+            )
+            st.session_state.context_window = context_value
 
-            # API Key Input with validation
-            api_key = st.text_input("Enter Gemini API Key", type="password")
-            if api_key:
-                try:
-                    # Validate API key
-                    genai.configure(api_key=api_key)
-                    genai.GenerativeModel('gemini-pro')
-                except Exception as e:
-                    st.error("Invalid API key. Please check and try again.")
-                    api_key = None
+            # Chunk size setting
+            chunk_value = st.slider(
+                "Chunk Size",
+                min_value=100,
+                max_value=2000,
+                value=st.session_state.get('chunk_size', 500),
+                step=50,
+                help="Size of text segments for processing"
+            )
+            st.session_state.chunk_size = chunk_value
 
-            # Advanced Settings
-            with st.expander("🔧 Advanced Settings", expanded=False):
-                # Temperature setting
-                temp_value = st.slider(
-                    "Temperature",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=st.session_state.model_temperature,
-                    step=0.1,
-                    help="Controls response creativity (0: focused, 1: creative)",
-                    key="model_temperature"
-                )
+            # Chunk overlap setting
+            overlap_value = st.slider(
+                "Chunk Overlap",
+                min_value=0,
+                max_value=min(500, chunk_value - 50),
+                value=min(st.session_state.get('chunk_overlap', 100), chunk_value - 50),
+                step=10,
+                help="Overlap between consecutive chunks"
+            )
+            st.session_state.chunk_overlap = overlap_value
 
-                # Context window setting
-                context_value = st.slider(
-                    "Context Window",
-                    min_value=1,
-                    max_value=10,
-                    value=st.session_state.context_window,
-                    step=1,
-                    help="Number of previous messages to consider",
-                    key="context_window"
-                )
+            # Temperature setting
+            temp_value = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get('model_temperature', 0.7),
+                step=0.1,
+                help="Temperature for response generation"
+            )
+            st.session_state.model_temperature = temp_value
 
-                # Chunk size setting
-                chunk_value = st.slider(
-                    "Chunk Size",
-                    min_value=100,
-                    max_value=2000,
-                    value=st.session_state.chunk_size,
-                    step=50,
-                    help="Size of text segments for processing",
-                    key="chunk_size"
-                )
+            # Top-K results setting
+            top_k_value = st.slider(
+                "Top-K Results",
+                min_value=1,
+                max_value=10,
+                value=st.session_state.get('top_k_results', 3),
+                step=1,
+                help="Number of top results to retrieve"
+            )
+            st.session_state.top_k_results = top_k_value
 
-                # Chunk overlap setting
-                overlap_value = st.slider(
-                    "Chunk Overlap",
-                    min_value=0,
-                    max_value=min(500, chunk_value - 50),
-                    value=min(st.session_state.chunk_overlap, chunk_value - 50),
-                    step=10,
-                    help="Overlap between consecutive chunks",
-                    key="chunk_overlap"
-                )
+            # Validate all settings together
+            is_valid, error_message = validate_settings(
+                temp_value,
+                context_value,
+                chunk_value,
+                overlap_value,
+                top_k_value
+            )
 
-                # Top K chunks setting
-                top_k_value = st.slider(
-                    "Top K Chunks",
-                    min_value=1,
-                    max_value=10,
-                    value=st.session_state.top_k_results,
-                    step=1,
-                    help="Number of relevant passages to retrieve",
-                    key="top_k_results"
-                )
+            if not is_valid:
+                st.sidebar.error(error_message)
 
-                # Validate settings
-                is_valid, error_msg = validate_settings(
-                    temp_value,
-                    context_value,
-                    chunk_value,
-                    overlap_value,
-                    top_k_value
-                )
-
-                if not is_valid:
-                    st.error(error_msg)
+            # Reset button with confirmation
+            if st.sidebar.button("Reset to Defaults", key="reset_button"):
+                reset_settings()
+                st.sidebar.success("Settings reset to defaults!")
 
             # PDF Upload with enhanced handling
             st.header("📄 Document Upload")
@@ -645,14 +646,14 @@ def main():
             # Process Documents Button
             process_button = st.button(
                 "Process Documents",
-                disabled=not (uploaded_files and api_key)
+                disabled=not uploaded_files
             )
 
             # Document Processing
-            if process_button and uploaded_files and api_key:
+            if process_button and uploaded_files:
                 with st.spinner("Processing documents..."):
                     try:
-                        chatbot = EnhancedRAGChatbot(api_key)
+                        chatbot = EnhancedRAGChatbot()
                         processed_count = 0
                         errors = []
 
@@ -717,18 +718,26 @@ def main():
         st.header("💬 Chat Interface")
 
         # Display chat messages
-        for message in st.session_state.messages:
+        messages = st.session_state.get('messages', [])
+        for message in messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
         # Chat input
+        document_store = st.session_state.get('document_store', {})
         if prompt := st.chat_input(
             "Ask a question about your documents",
-            disabled=not (api_key and st.session_state.document_store)
+            disabled=not document_store
         ):
             # Add user message
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            st.session_state.conversation_history.append({"role": "user", "content": prompt})
+            messages = st.session_state.get('messages', [])
+            conversation_history = st.session_state.get('conversation_history', [])
+            
+            messages.append({"role": "user", "content": prompt})
+            conversation_history.append({"role": "user", "content": prompt})
+            
+            st.session_state['messages'] = messages
+            st.session_state['conversation_history'] = conversation_history
 
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -736,7 +745,7 @@ def main():
             # Generate and display response
             with st.chat_message("assistant"):
                 try:
-                    chatbot = EnhancedRAGChatbot(api_key)
+                    chatbot = EnhancedRAGChatbot()
 
                     with st.status("🔍 Retrieving relevant context..."):
                         context = chatbot.retrieve_relevant_context(prompt)
@@ -773,13 +782,14 @@ def main():
                     logger.error(f"Response generation error: {str(e)}\n{traceback.format_exc()}")
 
         # Document Statistics
-        if st.session_state.document_store:
+        document_store = st.session_state.get('document_store', {})
+        if document_store:
             with st.expander("📑 Document Statistics", expanded=False):
                 st.markdown("### Processed Documents Overview")
                 
                 # Create statistics table
                 stats_data = []
-                for doc_id, doc_data in st.session_state.document_store.items():
+                for doc_id, doc_data in document_store.items():
                     stats_data.append({
                         "Filename": doc_data['filename'],
                         "Chunks": len(doc_data['chunks']),
