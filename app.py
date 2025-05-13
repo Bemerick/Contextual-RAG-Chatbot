@@ -17,10 +17,8 @@ import threading
 import hashlib
 import re
 import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -267,9 +265,9 @@ class EnhancedPDFProcessor:
 class EnhancedRAGChatbot:
     def __init__(self):
         # Get API key from environment variable
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = st.secrets['GOOGLE_API_KEY']
         if not api_key:
-            raise ValueError("GOOGLE_API_KEY not found in environment variables. Please check your .env file.")
+            raise ValueError("GOOGLE_API_KEY not found in streamlit secrets. Please check your .streamlit/secrets.toml file.")
             
         genai.configure(api_key=api_key)
         self.text_model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
