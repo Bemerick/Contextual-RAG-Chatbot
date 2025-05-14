@@ -47,6 +47,7 @@ def main():
     
     # List of models to test
     models = [
+        'gemini-2.5-pro-preview-05-06',  # Current model used in the application
         'gemini-1.5-pro',
         'gemini-1.0-pro',
         'gemini-pro'

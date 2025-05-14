@@ -317,7 +317,7 @@ class EnhancedRAGChatbot:
         
         # Only use the working model based on testing
         self.model_names = [
-            'gemini-1.5-pro',  # Working model confirmed by testing
+            'gemini-2.5-pro-preview-05-06',  # Working model confirmed by testing
         ]
         
         # Try to initialize with a working model
@@ -701,8 +701,8 @@ class EnhancedRAGChatbot:
 
             conversation_context = "\n".join(recent_messages) if recent_messages else "No previous context"
 
-            # Prepare context text with better formatting - limit context size to avoid token limits
-            max_context_chunks = 3  # Limit to top 3 chunks to avoid exceeding token limits
+            # Prepare context text with better formatting - increased context window for more comprehensive answers
+            max_context_chunks = 5  # Increased from 3 to 5 to include more relevant context
             limited_context = context[:max_context_chunks] if len(context) > max_context_chunks else context
             
             if len(context) > max_context_chunks:
@@ -713,7 +713,7 @@ class EnhancedRAGChatbot:
             # Log context size for debugging
             logger.info(f"Context text size: {len(context_text)} characters")
 
-            # Enhanced prompt template with better instructions
+            # Enhanced prompt template with better instructions for specific questions
             prompt = f"""
             You are a helpful AI assistant that provides accurate and comprehensive answers based on the provided context.
             
@@ -726,8 +726,10 @@ class EnhancedRAGChatbot:
             1. Answer the question based ONLY on the context provided above
             2. If the context doesn't contain relevant information, say you don't have enough information
             3. Provide a detailed and informative response that directly addresses the question
-            4. Do not repeat the same information multiple times
-            5. Do not include phrases like 'Based on the document' or 'According to the context' in your response
+            4. If the question is about a specific procedure, policy, or multi-step process, make sure to include ALL relevant steps and details
+            5. Preserve the structure of numbered lists, bullet points, and hierarchical information from the original document
+            6. Do not repeat the same information multiple times
+            7. Do not include phrases like 'Based on the document' or 'According to the context' in your response
             
             ANSWER:
             """.strip()
@@ -814,8 +816,26 @@ class EnhancedRAGChatbot:
                 
             logger.info("Attempting simple keyword-based response generation")
             
-            # Extract keywords from the query
-            query_words = set(query.lower().split())
+            # Extract keywords from the query with improved handling for multi-word terms
+            query_lower = query.lower()
+            
+            # Check for multi-word terms or phrases (like "Student Complaint/Grievance Procedure")
+            multi_word_terms = []
+            # Look for phrases with slashes, hyphens, or in quotes
+            slash_terms = re.findall(r'\w+/\w+', query_lower)
+            hyphen_terms = re.findall(r'\w+-\w+', query_lower)
+            quoted_terms = re.findall(r'"([^"]+)"', query_lower)
+            multi_word_terms.extend(slash_terms + hyphen_terms + quoted_terms)
+            
+            # Also look for potential multi-word terms (2-3 word sequences)
+            words = query_lower.split()
+            for i in range(len(words)-1):
+                multi_word_terms.append(f"{words[i]} {words[i+1]}")
+                if i < len(words)-2:
+                    multi_word_terms.append(f"{words[i]} {words[i+1]} {words[i+2]}")
+            
+            # Regular single-word processing
+            query_words = set(query_lower.split())
             important_words = [w for w in query_words if len(w) > 3 and w not in {
                 'what', 'when', 'where', 'which', 'who', 'whom', 'whose', 'why', 'how',
                 'does', 'do', 'did', 'is', 'are', 'was', 'were', 'has', 'have', 'had',
@@ -834,13 +854,21 @@ class EnhancedRAGChatbot:
                 
             logger.info(f"Important query words: {important_words}")
             
-            # Find the most relevant context chunk based on keyword matching
+            # Find the most relevant context chunk based on improved keyword matching
             best_chunk = None
             best_score = 0
             
             for chunk in context:
                 chunk_lower = chunk.lower()
-                score = sum(1 for word in important_words if word in chunk_lower)
+                # Score based on single words
+                word_score = sum(1 for word in important_words if word in chunk_lower)
+                
+                # Additional score for multi-word terms (weighted higher)
+                phrase_score = sum(3 for phrase in multi_word_terms if phrase in chunk_lower)
+                
+                # Combined score with phrase matches weighted higher
+                score = word_score + phrase_score
+                
                 if score > best_score:
                     best_score = score
                     best_chunk = chunk
